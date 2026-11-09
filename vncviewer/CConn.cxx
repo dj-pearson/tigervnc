@@ -23,6 +23,9 @@
 #endif
 
 #include <assert.h>
+#include <ctype.h>
+
+#include <algorithm>
 #ifndef _WIN32
 #include <unistd.h>
 #endif
@@ -64,6 +67,8 @@
 #include "AudioOutput.h"
 #include "AuthDialog.h"
 #include "CConn.h"
+#include "ConnectionBook.h"
+#include "CredentialStore.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
 #include "PlatformPixelBuffer.h"
@@ -71,6 +76,7 @@
 #include "vncviewer.h"
 
 std::string CConn::savedUsername;
+std::set<std::string> CConn::rejectedStoredLogins;
 std::string CConn::savedPassword;
 
 static core::LogWriter vlog("CConn");
@@ -93,7 +99,8 @@ CConn::CConn()
     msgTimer(this, &CConn::processNextMsg), desktop(nullptr),
     audioOutput(nullptr),
     updateCount(0), pixelCount(0),
-    lastServerEncoding((unsigned int)-1), bpsEstimate(20000000)
+    lastServerEncoding((unsigned int)-1), bpsEstimate(20000000),
+    usedStoredLogin(false), pendingRemember(false)
 {
   setShared(::shared);
 
@@ -252,6 +259,19 @@ std::string CConn::connectionInfo()
   return infoText;
 }
 
+std::string CConn::credentialKey()
+{
+  std::string host(serverHost);
+
+  // Same format as ConnectionBook::credentialKey(), but without
+  // re-parsing (which would trip over IPv6 addresses)
+  std::transform(host.begin(), host.end(), host.begin(),
+                 [](unsigned char c) { return tolower(c); });
+  if (serverPort == 0)
+    return host;
+  return core::format("%s:%d", host.c_str(), serverPort);
+}
+
 unsigned CConn::getUpdateCount()
 {
   return updateCount;
@@ -314,6 +334,10 @@ void CConn::processNextMsg(core::Timer*)
     vlog.info("%s", e.what());
     disconnect();
   } catch (rfb::auth_error& e) {
+    // Ask the user next time rather than retrying a bad saved login
+    if (usedStoredLogin)
+      rejectedStoredLogins.insert(credentialKey());
+    pendingRemember = false;
     savedUsername.clear();
     savedPassword.clear();
     vlog.error(_("Authentication failed: %s"), e.what());
@@ -393,7 +417,37 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
     return;
   }
 
-  AuthDialog d(isSecure(), user != nullptr, password != nullptr);
+  // Saved login in the OS credential store?
+  std::string credKey, storedUser, storedPasswd, defaultUser;
+  bool haveStored;
+
+  credKey = credentialKey();
+  haveStored = CredentialStore::load(credKey, &storedUser, &storedPasswd);
+  if (haveStored && (rejectedStoredLogins.count(credKey) == 0) &&
+      (!user || !storedUser.empty())) {
+    vlog.info(_("Using saved login for %s"), credKey.c_str());
+    if (user)
+      *user = storedUser;
+    *password = storedPasswd;
+    usedStoredLogin = true;
+    return;
+  }
+
+  defaultUser = storedUser;
+  if (defaultUser.empty() && !activeConnectionId.empty()) {
+    ConnectionBook book;
+    try {
+      book.load();
+      ConnectionEntry* entry = book.findById(activeConnectionId);
+      if (entry)
+        defaultUser = entry->username;
+    } catch (std::exception& e) {
+      vlog.error("%s", e.what());
+    }
+  }
+
+  AuthDialog d(isSecure(), user != nullptr, password != nullptr,
+               defaultUser, CredentialStore::available(), haveStored);
   d.show();
   while (d.shown())
     Fl::wait();
@@ -417,6 +471,17 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
       savedPassword = d.getPassword();
   }
 
+  if (ret_val == 1) {
+    if (d.getRemember()) {
+      // Stored once the server has accepted it, see initDone()
+      pendingRemember = true;
+      pendingUser = user ? *user : "";
+      pendingPasswd = *password;
+    } else if (haveStored) {
+      CredentialStore::forget(credKey);
+    }
+  }
+
   if (ret_val != 1)
     throw rfb::auth_cancelled();
 }
@@ -426,6 +491,16 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 // server the pixel format and encodings to use and request the first update.
 void CConn::initDone()
 {
+  // Authentication succeeded, so the login is worth keeping
+  if (pendingRemember) {
+    std::string key = credentialKey();
+    if (CredentialStore::store(key, pendingUser, pendingPasswd))
+      rejectedStoredLogins.erase(key);
+    pendingRemember = false;
+    pendingUser.clear();
+    pendingPasswd.clear();
+  }
+
   desktop = new DesktopWindow(server.width(), server.height(), this);
 
   // Force a switch to the format and encoding we'd like

@@ -50,7 +50,9 @@
 static Fl_Pixmap secure_icon(secure);
 static Fl_Pixmap insecure_icon(insecure);
 
-AuthDialog::AuthDialog(bool secure_, bool needsUser, bool needsPassword)
+AuthDialog::AuthDialog(bool secure_, bool needsUser, bool needsPassword,
+                       const std::string& defaultUser,
+                       bool offerRemember, bool rememberDefault)
   : Fl_Window(410, 0, _("VNC authentication"))
 {
   int x, y;
@@ -93,6 +95,7 @@ AuthDialog::AuthDialog(bool secure_, bool needsUser, bool needsPassword)
     username = new Fl_Input(x, y,  w()- x - OUTER_MARGIN,
                             INPUT_HEIGHT, _("Username:"));
     username->align(FL_ALIGN_LEFT | FL_ALIGN_TOP);
+    username->value(defaultUser.c_str());
     y += INPUT_HEIGHT + INNER_MARGIN;
   } else {
     username = nullptr;
@@ -118,6 +121,21 @@ AuthDialog::AuthDialog(bool secure_, bool needsUser, bool needsPassword)
     passwd = nullptr;
     keepPasswdCheckbox = nullptr;
   }
+
+  if (needsPassword && offerRemember) {
+    rememberCheckbox = new Fl_Check_Button(LBLRIGHT(x, y,
+                                                    CHECK_MIN_WIDTH,
+                                                    CHECK_HEIGHT,
+                                                    _("Remember login on this computer")));
+    rememberCheckbox->value(rememberDefault);
+    y += CHECK_HEIGHT + INNER_MARGIN;
+  } else {
+    rememberCheckbox = nullptr;
+  }
+
+  // Skip straight to the password if we already know who
+  if (passwd && username && !defaultUser.empty())
+    passwd->take_focus();
 
   x = w() - OUTER_MARGIN;
   y += OUTER_MARGIN - INNER_MARGIN;
@@ -182,4 +200,11 @@ void AuthDialog::button_cb(Fl_Widget *w, long val)
 
   self->result_ = val;
   self->hide();
+}
+
+bool AuthDialog::getRemember()
+{
+  if (rememberCheckbox)
+    return rememberCheckbox->value();
+  return false;
 }

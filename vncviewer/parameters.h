@@ -21,6 +21,7 @@
 #define __PARAMETERS_H__
 
 #include <list>
+#include <map>
 #include <string>
 
 namespace core {
@@ -93,6 +94,12 @@ extern core::StringParameter via;
 
 void saveViewerParameters(const char *filename, const char *servername=nullptr);
 std::string loadViewerParameters(const char *filename);
+
+// Helpers for switching between per-connection option sets
+typedef std::map<std::string, std::string> ViewerParameterSnapshot;
+ViewerParameterSnapshot snapshotViewerParameters();
+void restoreViewerParameters(const ViewerParameterSnapshot& snapshot);
+void resetViewerParameters();
 
 #ifdef _WIN32
 std::list<std::string> loadHistoryFromRegKey();

@@ -63,6 +63,7 @@
 #include "fltk/util.h"
 #include "parameters.h"
 #include "CConn.h"
+#include "ConnectionBook.h"
 #include "ServerDialog.h"
 #include "touch.h"
 #include "vncviewer.h"
@@ -411,6 +412,9 @@ static void usage(const char *programName)
           programName, programName, programName, programName, programName);
 #endif
 
+  fprintf(stderr, _("       %s [parameters] [saved connection name]\n"),
+          programName);
+
 #if !defined(WIN32) && !defined(__APPLE__)
   fprintf(stderr, _("\n"
           "Options:\n\n"
@@ -434,6 +438,57 @@ static void usage(const char *programName)
 #endif
 
   exit(1);
+}
+
+static void resolveSavedConnection()
+{
+  ConnectionBook book;
+  ConnectionEntry* entry;
+
+  if (vncServerName.empty() || listenMode)
+    return;
+
+  try {
+    book.load();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+    return;
+  }
+
+  entry = book.findByName(vncServerName);
+  if (entry != nullptr) {
+    std::string path;
+    struct stat st;
+
+    vlog.info(_("Using saved connection \"%s\" (%s)"),
+              entry->name.c_str(), entry->host.c_str());
+
+    try {
+      path = ConnectionBook::optionsPath(entry->id);
+      if (stat(path.c_str(), &st) == 0) {
+        resetViewerParameters();
+        loadViewerParameters(path.c_str());
+      }
+    } catch (std::exception& e) {
+      vlog.error("%s", e.what());
+    }
+
+    vncServerName = entry->host;
+  } else {
+    // Still note which entry it is, for the username
+    entry = book.findByHost(vncServerName);
+    if (entry == nullptr)
+      return;
+  }
+
+  activeConnectionId = entry->id;
+  book.touch(entry->id, time(nullptr));
+
+  try {
+    book.save();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
 }
 
 static void
@@ -659,6 +714,9 @@ int main(int argc, char** argv)
 
   // Check if the server name in reality is a configuration file
   potentiallyLoadConfigurationFile(vncServerName.c_str());
+
+  // ...or the name of a saved connection
+  resolveSavedConnection();
 
   create_base_dirs();
 

@@ -971,6 +971,32 @@ std::string loadViewerParameters(const char *filename) {
   return servername;
 }
 
+ViewerParameterSnapshot snapshotViewerParameters()
+{
+  ViewerParameterSnapshot snapshot;
+
+  for (core::Parameter* param : parameterArray)
+    snapshot[param->getName()] = param->getValueStr();
+
+  return snapshot;
+}
+
+void restoreViewerParameters(const ViewerParameterSnapshot& snapshot)
+{
+  for (core::Parameter* param : parameterArray) {
+    auto iter = snapshot.find(param->getName());
+    if (iter == snapshot.end())
+      continue;
+    param->setParam(iter->second.c_str());
+  }
+}
+
+void resetViewerParameters()
+{
+  for (core::Parameter* param : parameterArray)
+    param->setParam(param->getDefaultStr().c_str());
+}
+
 void migrateDeprecatedOptions()
 {
   if (fullScreenAllMonitors) {
