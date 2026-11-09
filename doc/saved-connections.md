@@ -53,12 +53,47 @@ the new login replaces the old one. Untick the box to forget it.
 Linux and macOS don't have a credential store backend yet. There the box
 is hidden and logins are not stored.
 
+## In-session menu (F8)
+
+The F8 menu adds:
+
+- **View only**: stop sending keyboard and mouse input.
+- **Quality**: Automatic, Best (lossless, for fast networks), Balanced,
+  or Low bandwidth. Takes effect immediately.
+- **Switch to**: every saved connection (favorites first, marked `*`),
+  plus **Other computer...** which opens the connection window. The
+  current session ends and the chosen computer is connected, with its
+  own options and saved login.
+- **Save this connection... / Edit saved connection...**: save the
+  current server to the address book, or edit its entry.
+
+View only and Quality changes made during a session with a saved
+connection are kept for that connection.
+
+## Automatic reconnect
+
+When an established session drops, the viewer waits and reconnects on
+its own: after 1 second, then 2, 4, 8, 16 and every 30 seconds. A window
+shows the error and a countdown, with **Reconnect now** and **Cancel**.
+
+A rejected login, or a connection that never got established, still
+gets the old "Reconnect?" question, so a wrong password or address isn't
+retried forever. Incoming `-listen` connections are never redialled.
+Turn it off under *Options > Miscellaneous* or with `-AutoReconnect=0`.
+
 ## Command line
 
     vncviewer "Office PC"
 
 connects to the saved connection with that name (case-insensitive),
 using its options. Plain host names keep working as before.
+
+## Installing on other PCs
+
+`tigervnc64-<version>.exe` (from the `installer` build target) installs a
+self-contained viewer with Start menu shortcuts. The `vncviewer.exe` from
+a static build (`-DBUILD_STATIC=ON`) also runs on its own, with no other
+files needed.
 
 ## Files
 

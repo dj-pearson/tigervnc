@@ -25,6 +25,7 @@ add_executable(vncviewer
   Surface.cxx
   OptionsDialog.cxx
   PlatformPixelBuffer.cxx
+  ReconnectDialog.cxx
   Viewport.cxx
   parameters.cxx
   touch.cxx

@@ -20,6 +20,9 @@
 #ifndef __VIEWPORT_H__
 #define __VIEWPORT_H__
 
+#include <string>
+#include <vector>
+
 #include <core/Rect.h>
 
 #include <FL/Fl_Widget.H>
@@ -100,10 +103,17 @@ private:
   void initContextMenu();
   void popupContextMenu();
 
+  void switchTo(const std::string& id);
+  void switchToOther();
+  void saveConnection();
+
   static void handleOptions(void *data);
 
 private:
   CConn* cc;
+
+  // Saved connections offered in the context menu, by menu index
+  std::vector<std::string> switchTargets;
 
   PlatformPixelBuffer* frameBuffer;
 

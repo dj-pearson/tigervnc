@@ -72,7 +72,7 @@ const char* SERVER_HISTORY="tigervnc.history";
 
 // VNC ports we look for on Tailscale computers (displays :0 to :2)
 static const std::vector<int> TAILSCALE_VNC_PORTS = { 5900, 5901, 5902 };
-static const int TAILSCALE_PROBE_TIMEOUT = 700;
+static const int TAILSCALE_PROBE_TIMEOUT = 1500;
 
 // Fl_Tree that reports double clicks and Enter on a row
 class ConnectionTree : public Fl_Tree {

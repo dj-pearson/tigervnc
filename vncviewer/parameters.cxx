@@ -94,6 +94,12 @@ core::BoolParameter
                      "user to reconnect"),
                    true);
 
+core::BoolParameter
+  autoReconnect("AutoReconnect",
+                _("Reconnect automatically, with increasing delays, when "
+                  "an established connection is lost"),
+                true);
+
 core::StringParameter
   passwordFile("PasswordFile",
                _("Password file for VNC authentication"),
@@ -274,6 +280,7 @@ static core::Parameter* parameterArray[] = {
   &rfb::SecurityClient::secTypes,
   /* Misc. */
   &reconnectOnError,
+  &autoReconnect,
   &shared,
 #ifdef HAVE_AUDIO
   &playAudio,

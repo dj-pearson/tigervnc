@@ -334,6 +334,8 @@ void CConn::processNextMsg(core::Timer*)
     vlog.info("%s", e.what());
     disconnect();
   } catch (rfb::auth_error& e) {
+    report_auth_failure();
+
     // Ask the user next time rather than retrying a bad saved login
     if (usedStoredLogin)
       rejectedStoredLogins.insert(credentialKey());
@@ -491,6 +493,8 @@ void CConn::getUserPasswd(std::string *user, std::string *password)
 // server the pixel format and encodings to use and request the first update.
 void CConn::initDone()
 {
+  report_session_established();
+
   // Authentication succeeded, so the login is worth keeping
   if (pendingRemember) {
     std::string key = credentialKey();

@@ -47,6 +47,9 @@ public:
   static void addCallback(OptionsCallback *cb, void *data = nullptr);
   static void removeCallback(OptionsCallback *cb);
 
+  // Tells everyone that the options have changed
+  static void notifyCallbacks();
+
   void show(void) override;
 
 protected:
@@ -166,6 +169,7 @@ protected:
   /* Misc. */
   Fl_Check_Button *sharedCheckbox;
   Fl_Check_Button *reconnectCheckbox;
+  Fl_Check_Button *autoReconnectCheckbox;
 #ifdef HAVE_AUDIO
   Fl_Check_Button *audioCheckbox;
 #endif

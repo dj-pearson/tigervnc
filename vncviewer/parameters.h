@@ -87,6 +87,7 @@ extern core::EnumListParameter shortcutModifiers;
 extern core::BoolParameter fullscreenSystemKeys;
 extern core::BoolParameter alertOnFatalError;
 extern core::BoolParameter reconnectOnError;
+extern core::BoolParameter autoReconnect;
 
 #ifndef WIN32
 extern core::StringParameter via;

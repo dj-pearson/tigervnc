@@ -64,6 +64,7 @@
 #include "parameters.h"
 #include "CConn.h"
 #include "ConnectionBook.h"
+#include "ReconnectDialog.h"
 #include "ServerDialog.h"
 #include "touch.h"
 #include "vncviewer.h"
@@ -83,6 +84,17 @@ static bool inMainloop = false;
 static bool exitMainloop = false;
 static std::string exitError;
 static bool fatalError = false;
+
+// Automatic reconnect state
+static bool sessionEstablished = false;
+static bool authFailed = false;
+static int reconnectAttempt = 0;
+
+// Pending switch to another server
+static std::string currentServer;
+static std::string switchServer;
+static std::string switchEntryId;
+static bool switchLoadOptions = false;
 
 static const char *about_text()
 {
@@ -154,6 +166,57 @@ void disconnect()
   exitMainloop = true;
 }
 
+void report_session_established()
+{
+  sessionEstablished = true;
+  reconnectAttempt = 0;
+}
+
+void report_auth_failure()
+{
+  authFailed = true;
+}
+
+void switch_connection(const std::string& server,
+                       const std::string& entryId, bool loadOptions)
+{
+  switchServer = server;
+  switchEntryId = entryId;
+  switchLoadOptions = loadOptions;
+  exitMainloop = true;
+}
+
+const char* current_server_name()
+{
+  return currentServer.c_str();
+}
+
+static void applySavedConnection(const std::string& id)
+{
+  ConnectionBook book;
+  ConnectionEntry* entry;
+  std::string path;
+  struct stat st;
+
+  try {
+    book.load();
+    entry = book.findById(id);
+    if (entry == nullptr)
+      return;
+
+    path = ConnectionBook::optionsPath(id);
+    if (stat(path.c_str(), &st) == 0) {
+      resetViewerParameters();
+      loadViewerParameters(path.c_str());
+    }
+
+    book.touch(id, time(nullptr));
+    book.save();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
+}
+
 void about_vncviewer()
 {
   fl_message_title(_("About TigerVNC"));
@@ -162,13 +225,19 @@ void about_vncviewer()
 
 static void mainloop(const char* vncserver, network::Socket* sock)
 {
+  // An incoming connection can't be redialled
+  bool incoming = sock != nullptr;
+
+  currentServer = vncserver;
+
   while (true) {
     CConn *cc;
 
     exitMainloop = false;
+    authFailed = false;
 
     cc = new CConn();
-    cc->connect(vncserver, sock);
+    cc->connect(currentServer.c_str(), sock);
 
     while (!exitMainloop) {
       int next_timer;
@@ -185,6 +254,28 @@ static void mainloop(const char* vncserver, network::Socket* sock)
 
     delete cc;
 
+    // A socket handed to us belongs to the first connection only
+    if (!switchServer.empty() || !exitError.empty())
+      sock = nullptr;
+
+    if (!switchServer.empty()) {
+      vlog.info(_("Switching to %s"), switchServer.c_str());
+
+      currentServer = switchServer;
+      activeConnectionId = switchEntryId;
+      if (switchLoadOptions && !switchEntryId.empty())
+        applySavedConnection(switchEntryId);
+
+      switchServer.clear();
+      switchEntryId.clear();
+      exitError.clear();
+      fatalError = false;
+      sessionEstablished = false;
+      reconnectAttempt = 0;
+      incoming = false;
+      continue;
+    }
+
     if (fatalError) {
       assert(!exitError.empty());
       if (alertOnFatalError)
@@ -195,7 +286,20 @@ static void mainloop(const char* vncserver, network::Socket* sock)
     if (exitError.empty())
       break;
 
-    if(reconnectOnError && (sock == nullptr)) {
+    // Dropped sessions come back on their own, but a rejected login
+    // needs the user
+    if (autoReconnect && reconnectOnError && !incoming &&
+        sessionEstablished && !authFailed) {
+      reconnectAttempt++;
+      if (ReconnectDialog::run(currentServer, exitError, reconnectAttempt,
+                               ReconnectDialog::backoff(reconnectAttempt))) {
+        exitError.clear();
+        continue;
+      }
+      break;
+    }
+
+    if(reconnectOnError && !incoming) {
       int ret;
       ret = fl_choice(_("%s\n\n"
                         "Attempt to reconnect?"),
