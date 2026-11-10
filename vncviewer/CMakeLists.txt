@@ -14,13 +14,18 @@ add_executable(vncviewer
   AuthDialog.cxx
   BaseTouchHandler.cxx
   CConn.cxx
+  ConnectionBook.cxx
+  ConnectionEditDialog.cxx
+  CredentialStore.cxx
   DesktopWindow.cxx
   EmulateMB.cxx
   ServerDialog.cxx
   ShortcutHandler.cxx
+  TailscaleDiscovery.cxx
   Surface.cxx
   OptionsDialog.cxx
   PlatformPixelBuffer.cxx
+  ReconnectDialog.cxx
   Viewport.cxx
   parameters.cxx
   touch.cxx
@@ -69,6 +74,9 @@ endif()
 
 target_include_directories(vncviewer SYSTEM PUBLIC ${FLTK_INCLUDE_DIR})
 target_link_libraries(vncviewer PRIVATE rfbclient rfb network rdr core)
+if(WIN32)
+  target_link_libraries(vncviewer PRIVATE advapi32 ws2_32)
+endif()
 target_link_libraries(vncviewer PRIVATE ${FLTK_LIBRARIES})
 
 if(GNUTLS_FOUND)

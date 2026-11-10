@@ -51,6 +51,9 @@
 #include "fltk/util.h"
 #include "Viewport.h"
 #include "CConn.h"
+#include "ConnectionBook.h"
+#include "ConnectionEditDialog.h"
+#include "ServerDialog.h"
 #include "OptionsDialog.h"
 #include "DesktopWindow.h"
 #include "parameters.h"
@@ -83,7 +86,81 @@ static core::LogWriter vlog("Viewport");
 
 enum { ID_DISCONNECT, ID_FULLSCREEN, ID_MINIMIZE, ID_RESIZE,
        ID_CTRL, ID_ALT, ID_CTRLALTDEL,
-       ID_REFRESH, ID_OPTIONS, ID_INFO, ID_ABOUT };
+       ID_REFRESH, ID_OPTIONS, ID_INFO, ID_ABOUT,
+       ID_VIEWONLY, ID_SAVECONN, ID_SWITCH_OTHER,
+       ID_QUALITY_AUTO, ID_QUALITY_BEST, ID_QUALITY_BALANCED,
+       ID_QUALITY_LOW,
+       ID_SWITCH_BASE = 1000 };
+
+// Encoding presets offered in the context menu
+struct QualityPreset {
+  int id;
+  bool fullColour;
+  bool noJpeg;
+  int quality;
+  int compress;
+};
+
+static const QualityPreset qualityPresets[] = {
+  // Lossless, light compression: fast local networks
+  { ID_QUALITY_BEST, true, true, 9, 1 },
+  { ID_QUALITY_BALANCED, true, false, 6, 2 },
+  // Rough JPEG, heavy compression: slow or mobile links
+  { ID_QUALITY_LOW, true, false, 2, 6 },
+};
+
+static int currentQualityPreset()
+{
+  if (autoSelect)
+    return ID_QUALITY_AUTO;
+
+  for (const QualityPreset& p : qualityPresets) {
+    if (fullColour == p.fullColour &&
+        rfb::CConnection::noJpeg == p.noJpeg &&
+        (p.noJpeg || qualityLevel == p.quality) &&
+        customCompressLevel && compressLevel == p.compress &&
+        preferredEncoding == "Tight")
+      return p.id;
+  }
+
+  return -1;
+}
+
+static void applyQualityPreset(int id)
+{
+  if (id == ID_QUALITY_AUTO) {
+    autoSelect.setParam(true);
+  } else {
+    for (const QualityPreset& p : qualityPresets) {
+      if (p.id != id)
+        continue;
+      autoSelect.setParam(false);
+      preferredEncoding.setParam("Tight");
+      fullColour.setParam(p.fullColour);
+      rfb::CConnection::noJpeg.setParam(p.noJpeg);
+      qualityLevel.setParam(p.quality);
+      customCompressLevel.setParam(true);
+      compressLevel.setParam(p.compress);
+    }
+  }
+
+  OptionsDialog::notifyCallbacks();
+}
+
+// Keeps option changes made during a session with its saved connection
+static void saveActiveOptions()
+{
+  if (activeConnectionId.empty())
+    return;
+
+  try {
+    saveViewerParameters(
+      ConnectionBook::optionsPath(activeConnectionId).c_str(),
+      current_server_name());
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
+}
 
 // Used for fake key presses from the menu
 static const int FAKE_CTRL_KEY_CODE = 0x10001;
@@ -954,7 +1031,90 @@ void Viewport::initContextMenu()
                 0, nullptr, (void*)ID_CTRLALTDEL, FL_MENU_DIVIDER);
 
   fltk_menu_add(contextMenu, C_("ContextMenu|", "&Refresh screen"),
-                0, nullptr, (void*)ID_REFRESH, FL_MENU_DIVIDER);
+                0, nullptr, (void*)ID_REFRESH, 0);
+  fltk_menu_add(contextMenu, C_("ContextMenu|", "&View only"),
+                0, nullptr, (void*)ID_VIEWONLY,
+                FL_MENU_TOGGLE | (viewOnly?FL_MENU_VALUE:0));
+
+  // Quality presets
+  {
+    std::string prefix;
+    int current;
+
+    prefix = std::string(C_("ContextMenu|", "&Quality")) + "/";
+    current = currentQualityPreset();
+
+    const struct { int id; const char* label; } items[] = {
+      { ID_QUALITY_AUTO, C_("ContextMenu|", "&Automatic") },
+      { ID_QUALITY_BEST, C_("ContextMenu|", "&Best (fast network)") },
+      { ID_QUALITY_BALANCED, C_("ContextMenu|", "B&alanced") },
+      { ID_QUALITY_LOW, C_("ContextMenu|", "&Low bandwidth") },
+    };
+    for (const auto& item : items)
+      contextMenu->add((prefix + fltk_menu_escape(item.label)).c_str(),
+                       0, nullptr, (void*)(intptr_t)item.id,
+                       FL_MENU_RADIO |
+                       ((current == item.id) ? FL_MENU_VALUE : 0));
+  }
+
+  // Other computers
+  {
+    ConnectionBook book;
+    std::vector<const ConnectionEntry*> entries;
+    std::string prefix;
+
+    try {
+      book.load();
+    } catch (std::exception& e) {
+      vlog.error("%s", e.what());
+    }
+
+    for (const ConnectionEntry& e : book.entries()) {
+      if (e.id != activeConnectionId)
+        entries.push_back(&e);
+    }
+    std::sort(entries.begin(), entries.end(),
+              [](const ConnectionEntry* a, const ConnectionEntry* b) {
+                if (a->favorite != b->favorite)
+                  return a->favorite;
+                return strcasecmp(a->name.c_str(), b->name.c_str()) < 0;
+              });
+
+    prefix = std::string(C_("ContextMenu|", "S&witch to")) + "/";
+    switchTargets.clear();
+    for (const ConnectionEntry* e : entries) {
+      std::string label;
+
+      // Names are the user's, so nothing in them is markup
+      for (char c : e->name) {
+        if (c == '&')
+          label += "&&";
+        else
+          label += c;
+      }
+      if (e->favorite)
+        label += " *";
+      contextMenu->add((prefix + fltk_menu_escape(fltk_escape(label))).c_str(),
+                       0, nullptr,
+                       (void*)(intptr_t)(ID_SWITCH_BASE + switchTargets.size()),
+                       0);
+      switchTargets.push_back(e->id);
+    }
+    contextMenu->add((prefix + fltk_menu_escape(
+                        C_("ContextMenu|", "&Other computer..."))).c_str(),
+                     0, nullptr, (void*)ID_SWITCH_OTHER, 0);
+
+    ConnectionEntry* active = nullptr;
+    if (!activeConnectionId.empty())
+      active = book.findById(activeConnectionId);
+    if (active == nullptr)
+      active = book.findByHost(current_server_name());
+
+    fltk_menu_add(contextMenu,
+                  active ? C_("ContextMenu|", "&Edit saved connection...")
+                         : C_("ContextMenu|", "&Save this connection..."),
+                  0, nullptr, (void*)ID_SAVECONN, FL_MENU_DIVIDER);
+  }
 
   fltk_menu_add(contextMenu, C_("ContextMenu|", "&Options..."),
                 0, nullptr, (void*)ID_OPTIONS, 0);
@@ -1055,7 +1215,117 @@ void Viewport::popupContextMenu()
   case ID_ABOUT:
     about_vncviewer();
     break;
+  case ID_VIEWONLY:
+    viewOnly.setParam(!viewOnly);
+    OptionsDialog::notifyCallbacks();
+    saveActiveOptions();
+    break;
+  case ID_QUALITY_AUTO:
+  case ID_QUALITY_BEST:
+  case ID_QUALITY_BALANCED:
+  case ID_QUALITY_LOW:
+    applyQualityPreset(m->argument());
+    saveActiveOptions();
+    break;
+  case ID_SAVECONN:
+    saveConnection();
+    break;
+  case ID_SWITCH_OTHER:
+    switchToOther();
+    break;
+  default:
+    if (m->argument() >= ID_SWITCH_BASE) {
+      size_t index = m->argument() - ID_SWITCH_BASE;
+      if (index < switchTargets.size())
+        switchTo(switchTargets[index]);
+    }
+    break;
   }
+}
+
+void Viewport::switchTo(const std::string& id)
+{
+  ConnectionBook book;
+  ConnectionEntry* entry;
+
+  try {
+    book.load();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+    return;
+  }
+
+  entry = book.findById(id);
+  if (entry == nullptr)
+    return;
+
+  switch_connection(entry->host, entry->id, true);
+}
+
+void Viewport::switchToOther()
+{
+  ViewerParameterSnapshot options;
+  std::string server;
+
+  // The connect window changes the options as you pick computers,
+  // which must not leak into this session if nothing is chosen
+  options = snapshotViewerParameters();
+
+  server = ServerDialog::run("");
+  if (server.empty()) {
+    restoreViewerParameters(options);
+    return;
+  }
+
+  // The dialog has already loaded and saved that connection's options
+  switch_connection(server, activeConnectionId, false);
+}
+
+void Viewport::saveConnection()
+{
+  ConnectionBook book;
+  ConnectionEntry* entry;
+  ConnectionEntry copy;
+
+  try {
+    book.load();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+  }
+
+  entry = nullptr;
+  if (!activeConnectionId.empty())
+    entry = book.findById(activeConnectionId);
+  if (entry == nullptr)
+    entry = book.findByHost(current_server_name());
+
+  if (entry != nullptr) {
+    copy = *entry;
+    if (!ConnectionEditDialog::run(_("Edit connection"), &copy,
+                                   book.groups()))
+      return;
+    *entry = copy;
+  } else {
+    copy.host = current_server_name();
+    copy.name = cc->server.name();
+    if (!ConnectionEditDialog::run(_("Save connection"), &copy,
+                                   book.groups()))
+      return;
+    entry = &book.add(copy);
+  }
+
+  activeConnectionId = entry->id;
+
+  try {
+    book.save();
+  } catch (std::exception& e) {
+    vlog.error("%s", e.what());
+    fl_alert(_("Unable to save the connections:\n\n%s"), e.what());
+    return;
+  }
+
+  // Remember how this session is set up
+  saveActiveOptions();
 }
 
 void Viewport::handleOptions(void *data)

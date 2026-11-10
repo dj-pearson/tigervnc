@@ -94,6 +94,12 @@ core::BoolParameter
                      "user to reconnect"),
                    true);
 
+core::BoolParameter
+  autoReconnect("AutoReconnect",
+                _("Reconnect automatically, with increasing delays, when "
+                  "an established connection is lost"),
+                true);
+
 core::StringParameter
   passwordFile("PasswordFile",
                _("Password file for VNC authentication"),
@@ -274,6 +280,7 @@ static core::Parameter* parameterArray[] = {
   &rfb::SecurityClient::secTypes,
   /* Misc. */
   &reconnectOnError,
+  &autoReconnect,
   &shared,
 #ifdef HAVE_AUDIO
   &playAudio,
@@ -969,6 +976,32 @@ std::string loadViewerParameters(const char *filename) {
   migrateDeprecatedOptions();
 
   return servername;
+}
+
+ViewerParameterSnapshot snapshotViewerParameters()
+{
+  ViewerParameterSnapshot snapshot;
+
+  for (core::Parameter* param : parameterArray)
+    snapshot[param->getName()] = param->getValueStr();
+
+  return snapshot;
+}
+
+void restoreViewerParameters(const ViewerParameterSnapshot& snapshot)
+{
+  for (core::Parameter* param : parameterArray) {
+    auto iter = snapshot.find(param->getName());
+    if (iter == snapshot.end())
+      continue;
+    param->setParam(iter->second.c_str());
+  }
+}
+
+void resetViewerParameters()
+{
+  for (core::Parameter* param : parameterArray)
+    param->setParam(param->getDefaultStr().c_str());
 }
 
 void migrateDeprecatedOptions()

@@ -362,6 +362,7 @@ void OptionsDialog::loadOptions(void)
   /* Misc. */
   sharedCheckbox->value(shared);
   reconnectCheckbox->value(reconnectOnError);
+  autoReconnectCheckbox->value(autoReconnect);
 #ifdef HAVE_AUDIO
   audioCheckbox->value(playAudio);
 #endif
@@ -520,6 +521,7 @@ void OptionsDialog::storeOptions(void)
   /* Misc. */
   shared.setParam(sharedCheckbox->value());
   reconnectOnError.setParam(reconnectCheckbox->value());
+  autoReconnect.setParam(autoReconnectCheckbox->value());
 #ifdef HAVE_AUDIO
   playAudio.setParam(audioCheckbox->value());
 #endif
@@ -532,6 +534,11 @@ void OptionsDialog::storeOptions(void)
     cursorType.setParam("Dot");
   }
 
+  notifyCallbacks();
+}
+
+void OptionsDialog::notifyCallbacks()
+{
   std::map<OptionsCallback*, void*>::const_iterator iter;
 
   for (iter = callbacks.begin();iter != callbacks.end();++iter)
@@ -1257,6 +1264,12 @@ void OptionsDialog::createMiscPage(int tx, int ty, int tw, int th)
                                                   CHECK_MIN_WIDTH,
                                                   CHECK_HEIGHT,
                                                   _("Ask to reconnect on connection errors")));
+  ty += CHECK_HEIGHT + TIGHT_MARGIN;
+
+  autoReconnectCheckbox = new Fl_Check_Button(LBLRIGHT(tx, ty,
+                                                  CHECK_MIN_WIDTH,
+                                                  CHECK_HEIGHT,
+                                                  _("Reconnect automatically when the connection drops")));
   ty += CHECK_HEIGHT + TIGHT_MARGIN;
 
 #ifdef HAVE_AUDIO

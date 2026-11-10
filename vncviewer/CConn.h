@@ -20,6 +20,9 @@
 #ifndef __CCONN_H__
 #define __CCONN_H__
 
+#include <set>
+#include <string>
+
 #include <FL/Fl.H>
 
 #include <core/Timer.h>
@@ -102,6 +105,8 @@ private:
 
   static void handleUpdateTimeout(void *data);
 
+  std::string credentialKey();
+
 private:
   std::string serverHost;
   int serverPort;
@@ -123,6 +128,13 @@ private:
 
   static std::string savedUsername;
   static std::string savedPassword;
+
+  // Saved login handling
+  bool usedStoredLogin;
+  bool pendingRemember;
+  std::string pendingUser;
+  std::string pendingPasswd;
+  static std::set<std::string> rejectedStoredLogins;
 };
 
 #endif

@@ -19,6 +19,9 @@
 #ifndef __VNCVIEWER_H__
 #define __VNCVIEWER_H__
 
+#include <exception>
+#include <string>
+
 // Report a fatal issue that requires us to terminate all of vncviewer
 void abort_vncviewer(const char *error, ...)
   __attribute__((__format__ (__printf__, 1, 2)));
@@ -31,6 +34,19 @@ void abort_connection_unexpected(const std::exception &);
 
 // Cleanly terminate the connection
 void disconnect();
+
+// Session state reported by CConn, used for automatic reconnects
+void report_session_established();
+void report_auth_failure();
+
+// Ends the current session and connects to another server. A
+// non-empty entryId is the saved connection being used; its options
+// are loaded when loadOptions is set.
+void switch_connection(const std::string& server,
+                       const std::string& entryId, bool loadOptions);
+
+// The server the current session is connected to
+const char* current_server_name();
 
 void about_vncviewer();
 

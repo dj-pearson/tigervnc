@@ -19,6 +19,11 @@ add_executable(configargs configargs.cxx)
 target_link_libraries(configargs PRIVATE rfb GTest::gtest_main)
 gtest_discover_tests(configargs)
 
+add_executable(connectionbook connectionbook.cxx
+  ../../vncviewer/ConnectionBook.cxx)
+target_link_libraries(connectionbook PRIVATE network core GTest::gtest_main)
+gtest_discover_tests(connectionbook)
+
 add_executable(conv conv.cxx)
 target_link_libraries(conv PRIVATE rfb GTest::gtest_main)
 gtest_discover_tests(conv)
@@ -46,6 +51,14 @@ gtest_discover_tests(pixelformat)
 add_executable(shortcuthandler shortcuthandler.cxx ../../vncviewer/ShortcutHandler.cxx)
 target_link_libraries(shortcuthandler PRIVATE core GTest::gtest_main)
 gtest_discover_tests(shortcuthandler)
+
+add_executable(tailscale tailscale.cxx
+  ../../vncviewer/TailscaleDiscovery.cxx)
+target_link_libraries(tailscale PRIVATE core GTest::gtest_main)
+if(WIN32)
+  target_link_libraries(tailscale PRIVATE ws2_32)
+endif()
+gtest_discover_tests(tailscale)
 
 add_executable(unicode unicode.cxx)
 target_link_libraries(unicode PRIVATE core GTest::gtest_main)
